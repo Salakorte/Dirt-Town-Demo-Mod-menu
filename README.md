@@ -76,4 +76,4 @@ Pruebas: DirtTownMenu.exe --coop-self-test y --self-test. Al ser WinExe, redirig
 
 Referencias: [Steam Matchmaking](https://partner.steamgames.com/doc/api/ISteamMatchmaking), [Capstone](https://www.capstone-engine.org/lang_python.html). Capstone se usa solo en análisis local, no en el menú distribuido.
 
-Créditos: mod cooperativo de VornixMods, .NET/Windows Forms de Microsoft y Capstone para el análisis. Proyecto desarrollado con asistencia de Codex (OpenAI). Las licencias de los componentes .NET se incluyen al empaquetar la versión autónoma. Los archivos del juego y del cooperativo pertenecen a sus respectivos autores.
+Créditos: mod cooperativo de VornixMods, .NET/Windows Forms de Microsoft y Capstone para el análisis. Las licencias de los componentes .NET se incluyen al empaquetar la versión autónoma. Los archivos del juego y del cooperativo pertenecen a sus respectivos autores.
