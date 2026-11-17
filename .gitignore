@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+backups/
+artifacts/
+.tools/
+*.user
+**/__pycache__/
+*.pyc
+MODLOG.md
+MODDING_PLAN.md
+.env
+.env.*
