@@ -31,6 +31,7 @@ internal static class Program
                 }
                 if(args[0]=="--self-test") return SelfTest.Run();
                 if(args[0]=="--coop-self-test"){CoopSyncTests.Run().GetAwaiter().GetResult();return 0;}
+                if(args[0]=="--loader-self-test")return LoaderTests.Run();
                 if(args[0]=="--live-snapshot")
                 {
                     var games=Process.GetProcessesByName("dirttown");
@@ -64,7 +65,7 @@ internal static class Program
         using var singleton=new Mutex(true,@"Local\DirtTownMenu.SingleInstance",out bool first);
         if(!first) {MessageBox.Show("El menú ya está abierto. Pulsa F6 para mostrarlo.","Dirt Town Menu"); return 0;}
         ApplicationConfiguration.Initialize();
-        Application.Run(new MenuForm());
+        Application.Run(new IntegratedHostForm());
         return 0;
     }
 }

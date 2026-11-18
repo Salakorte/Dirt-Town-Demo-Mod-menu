@@ -46,3 +46,13 @@ Cambio de sala, dueño o miembros cancela. Fallo antes de mutar publica abort; d
 - La primera carga superó10s; terminó después y leer el puente cargado funcionó. Se amplía la espera inicial a30s.
 
 Pendiente real: publicación/recepción Steam con ambos PCs y prueba de bulldozer visible/móvil, entrar/salir/cambiar máquina en ambas direcciones. No confirmado manejo físico ni resolución final del bloqueo de controles.
+
+## 0.5.0 — interfaz integrada y activación automática
+
+La interfaz de acciones se dibuja con el ImGui del juego. El coordinador externo sigue ejecutando CoopSync y consulta el buzón de creaciones del panel. Cmd8 lee el evento,9 confirma su resultado y10 comunica estado/heartbeat. Las acciones locales tienen un bloque Shared temporal separado: no pisan peticiones IPC del coordinador.
+
+AutoCoopSession detecta la sala periódicamente. Activa el receptor al entrar, conserva la misma instancia mientras la sala/autoridad no cambian, la detiene al salir y la reconstruye cuando cambia la sala. Una sesión con fallo parcial se conserva detenida: refrescar no elimina la protección contra duplicados. Invitado no autoriza creaciones. No se añade un protocolo de movimiento propio.
+
+Pruebas simuladas de detección, cambio de sala, salida a individual y conservación de fallo pasan. La0.5.0 no ha sido probada aún en la sala real ni en el juego: la lectura real descrita arriba corresponde a0.4.0. El arranque de la sincronización ahora es automático, sin botón de activación.
+
+Aclaración final0.5.0: carga automática por winmm.dll propia, importada por el juego. No hace falta programa externo para individual. El coordinador únicamente abre el mapping del módulo ya cargado; no inyecta DLLs ni arranca el menú. Mantenerlo abierto en ambos equipos para sincronización cooperativa. Los nuevos respaldos nativos se crean bajo LOCALAPPDATA/DirtTownMenu/backups antes de la primera mutación.

@@ -1,2 +1,2 @@
 @echo off
-start "" "%~dp0artifacts\DirtTownMenu-0.4.0\DirtTownMenu.exe"
+start "" "steam://rungameid/5471710"

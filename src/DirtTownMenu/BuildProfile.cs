@@ -70,6 +70,12 @@ internal static class BuildProfile
         foreach (var patch in Unlock.Concat(Range(10)))
             if (!At(patch.Rva,patch.Original.Length).SequenceEqual(patch.Original))
                 throw new InvalidDataException("Los bytes de la build no coinciden con el perfil.");
+        if(!At(0x1180950,16).SequenceEqual(Convert.FromHexString("4157415641554154555756534883EC58")))
+            throw new InvalidDataException("El punto de integración de la interfaz no coincide.");
+        if(!At(0xC723E0,19).SequenceEqual(Convert.FromHexString("4157415641554154555756534881EC78020000")))
+            throw new InvalidDataException("El punto de lectura de la cámara no coincide.");
+        if(!At(0x11A8510,11).SequenceEqual(Convert.FromHexString("4883EC384181F9FFFFFF00")))
+            throw new InvalidDataException("La función de dibujo de líneas no coincide.");
         foreach (int value in new[] {10,25,50})
             foreach (var patch in Range(value))
             {

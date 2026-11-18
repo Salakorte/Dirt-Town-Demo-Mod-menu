@@ -10,3 +10,6 @@ MODLOG.md
 MODDING_PLAN.md
 .env
 .env.*
+*.lib
+*.exp
+*.obj

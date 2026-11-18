@@ -130,7 +130,7 @@ internal sealed class CoopSync:IDisposable
             {
                 var ready=Parse<CoopAck>(peer.Data);
                 if(ready is null||ready.Version!=1||ready.Phase is not ("ready" or "applied")||ready.Roster!=state.Roster||ready.Count!=state.Count)
-                    throw new IOException("Falta un receptor compatible o las flotas no coinciden. Ambos deben conectar la versión 0.4.0 en una sesión con la misma flota inicial.");
+                    throw new IOException("Falta un receptor compatible o las flotas no coinciden. Ambos deben conectar la misma versión del menú en una sesión con la misma flota inicial.");
             }
             if(state.Members.Length<2)throw new IOException("Espera a que el invitado entre y active la sincronización.");
             if(state.NativePlayer<0||state.NativePlayer>1024)throw new IOException("El anfitrión no tiene un identificador de jugador nativo válido.");

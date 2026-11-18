@@ -17,7 +17,7 @@ internal sealed class MenuForm : Form
 
     public MenuForm()
     {
-        Text="Dirt Town · Mod Menu 0.4.0";
+        Text="Dirt Town · Mod Menu 0.5.0";
         ClientSize=new Size(452,610);
         MinimumSize=new Size(468,649);
         FormBorderStyle=FormBorderStyle.FixedSingle;

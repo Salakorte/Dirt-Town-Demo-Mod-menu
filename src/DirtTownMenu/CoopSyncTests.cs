@@ -10,6 +10,8 @@ internal static class CoopSyncTests
         public readonly Dictionary<ulong,string> Data=new(){{1,""},{2,""}};
         public readonly Dictionary<ulong,List<string>> Fleet=new(){{1,["dozer","hauler"]},{2,["dozer","hauler"]}};
         public int HostCreates,GuestCreates;
+        public bool Network=true,Available=true;
+        public ulong Lobby=99;
         public bool CorruptPrepared,WrongGuestIndex,LeaveOnPrepare;
         public readonly Dictionary<ulong,List<int>> Owners=new(){{1,[7,2]},{2,[7,2]}};
     }
@@ -17,7 +19,7 @@ internal static class CoopSyncTests
     {
         public Task<CoopState> Read()
         {
-            lock(room.Lock)return Task.FromResult(new CoopState(true,true,99,id,1,string.Join(',',room.Fleet[id]),room.Fleet[id].Count,room.Payload,room.Data.Select(p=>new CoopMember(p.Key,p.Value)).ToArray(),id==1?7:2));
+            lock(room.Lock)return Task.FromResult(new CoopState(room.Available,room.Network,room.Lobby,id,1,string.Join(',',room.Fleet[id]),room.Fleet[id].Count,room.Payload,room.Data.Select(p=>new CoopMember(p.Key,p.Value)).ToArray(),id==1?7:2));
         }
         public Task Publish(string value,bool member)
         {
@@ -102,5 +104,17 @@ internal static class CoopSyncTests
         await h8.Start();await g8.Start();await Fails(async()=>await h8.Spawn("dozer",0,0));
         Assert(leaving.HostCreates==0,"Host created after a peer left during preparation");await h8.Stop();await g8.Stop();
         Console.WriteLine("PASS: Membership change during preparation cancels before host mutation.");
+
+        var autoRoom=new Room{Network=false};using var auto=new AutoCoopSession(new Endpoint(autoRoom,1));
+        await auto.Refresh();Assert(auto.Current is null,"Automatic sync activated in single player");
+        autoRoom.Network=true;await auto.Refresh();var first=auto.Current;Assert(first is not null,"Coop room did not activate automatically");
+        await auto.Refresh();Assert(ReferenceEquals(first,auto.Current),"Polling recreated an active session");
+        using var autoGuest=new CoopSync(new Endpoint(autoRoom,2),TimeSpan.FromSeconds(2),5);await autoGuest.Start();autoRoom.WrongGuestIndex=true;
+        await Fails(async()=>await auto.Current!.Spawn("dozer",0,0));await auto.Refresh();
+        Assert(ReferenceEquals(first,auto.Current),"Automatic refresh cleared the partial-spawn fault");
+        await Fails(async()=>await auto.Current!.Spawn("dozer",0,0));Assert(autoRoom.HostCreates==1&&autoRoom.GuestCreates==1,"Automatic sync duplicated an uncertain creation");await autoGuest.Stop();
+        autoRoom.Lobby=100;await auto.Refresh();Assert(auto.Current is not null&&!ReferenceEquals(first,auto.Current),"Changed room did not reconnect");
+        autoRoom.Network=false;await auto.Refresh();Assert(auto.Current is null,"Sync stayed active after leaving coop");await auto.Stop();
+        Console.WriteLine("PASS: Automatic detection, stable polling, fault retention without duplicates, room reconnection and single-player stop.");
     }
 }

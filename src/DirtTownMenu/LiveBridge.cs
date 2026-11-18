@@ -11,36 +11,35 @@ internal sealed class LiveBridge:IDisposable
     readonly MemoryMappedFile mapping;
     readonly MemoryMappedViewAccessor view;
     readonly SemaphoreSlim gate=new(1);
-    CoopSync? coop;
+    readonly AutoCoopSession automatic;
     int disposed;
-    public string CoopStatus=>coop?.Status??"Sincronización cooperativa sin activar";
+    public Task AutoSynchronize()=>automatic.Refresh();
+    public string CoopStatus=>automatic.Status;
     public async Task EnableCoop()
     {
-        if(coop is not null)return;
-        var candidate=new CoopSync(new NativeCoopBackend(this));
-        try{await candidate.Start().ConfigureAwait(false);coop=candidate;}catch{candidate.Dispose();throw;}
+        await automatic.Refresh().ConfigureAwait(false);
+        if(automatic.Current is null)throw new IOException("Entra en una sala cooperativa compatible.");
     }
     public LiveBridge(Process game)
     {
         BuildProfile.ValidateFile(game.MainModule!.FileName);
-        string name=$"Local\\DirtTownMenuBridge8-{game.Id}";
+        string name=$"Local\\DirtTownMenuBridge10-{game.Id}";
         try{mapping=MemoryMappedFile.OpenExisting(name);}
         catch(FileNotFoundException)
         {
-            Inject(game,Path.Combine(AppContext.BaseDirectory,"DirtTownBridge8.dll"));
-            MemoryMappedFile? found=null;
-            for(int i=0;i<100;i++){try{found=MemoryMappedFile.OpenExisting(name);break;}catch(FileNotFoundException){Thread.Sleep(50);}}
-            mapping=found??throw new IOException("No se ha iniciado la conexión en tiempo real.");
+            throw new IOException("No se encuentra el menú integrado. Instala winmm.dll junto a dirttown.exe y reinicia el juego. Comprueba que no haya otra versión cargada.");
         }
         view=mapping.CreateViewAccessor(0,8304);
         for(int i=0;i<100&&view.ReadUInt32(44)!=1;i++)Thread.Sleep(50);
         if(view.ReadUInt32(0)!=0x44544D33||view.ReadUInt32(44)!=1)throw new IOException("El puente no coincide con esta versión del juego.");
+        automatic=new AutoCoopSession(new NativeCoopBackend(this));
     }
     public async Task<JsonDocument> Request(uint command,int vehicle=0,int material=0,float amount=1,float x=0,float z=0,string model="",float height=1)
     {
         if(command==3)
         {
-            if(coop is not null)
+            await automatic.Refresh().ConfigureAwait(false);
+            if(automatic.Current is { } coop)
             {
                 int id=await coop.Spawn(model,x,z).ConfigureAwait(false);
                 return JsonDocument.Parse($"{{\"ok\":true,\"vehicle\":{id},\"synchronized\":true}}");
@@ -104,7 +103,7 @@ internal sealed class LiveBridge:IDisposable
         if(Interlocked.Exchange(ref disposed,1)!=0)return;
         _=Task.Run(async()=>
         {
-            if(coop is not null)await coop.Stop().ConfigureAwait(false);
+            await automatic.Stop().ConfigureAwait(false);automatic.Dispose();
             await gate.WaitAsync().ConfigureAwait(false);
             try{view.Dispose();mapping.Dispose();}finally{gate.Release();}
         });

@@ -8,6 +8,13 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include "winmm_forwarder.h"
+#include "standalone_support.h"
+#include "preview_geometry.h"
+#include "free_camera.h"
+extern "C" BOOL WINAPI DirtTownMenuVerifyBuild(const wchar_t* filename){return standalone::exactBuild(filename)?TRUE:FALSE;}
+extern "C" int WINAPI DirtTownMenuPreviewSelfTest(){return preview::selfTest();}
+extern "C" int WINAPI DirtTownMenuCameraSelfTest(){return freecam::selfTest();}
 
 // Exact-build bridge. The external coordinator replicates creation through Steam lobby metadata.
 struct Shared {
@@ -77,11 +84,18 @@ static void snapshot(void* w){
 }
 struct GnuString{const char* data;uint64_t length;char storage[16];};
 #include "steam_lobby_bridge.h"
+#include "terrain_brush.h"
+static void execute(void* w);
+#include "integrated_menu.h"
 static void execute(void* w){
     if(shared->request==shared->completed)return;
     uint32_t request=shared->request;
     try{
+        if(shared->command==8){ingame::readOutbox();goto completed;}
+        if(shared->command==9){ingame::acknowledge();goto completed;}
+        if(shared->command==10){ingame::heartbeat();goto completed;}
         if(!worldOK(w))throw "Carga una partida primero";
+        if(shared->command>=2&&shared->command<=5)standalone::ensureBackup();
         if(shared->command==1)snapshot(w);
         else if(shared->command==2){
             void* m=machine(w,shared->vehicle);
@@ -176,30 +190,47 @@ static void execute(void* w){
         }
         else if(shared->command==6)lobbybridge::snapshot(w);
         else if(shared->command==7)lobbybridge::publish();
+        else if(shared->command==11)ingame::terrainProbe(w);
         else throw "Comando desconocido";
     }catch(const char* message){reply("{\"ok\":false,\"error\":\""+std::string(message)+"\"}");}
     catch(...){reply("{\"ok\":false,\"error\":\"Excepcion interna; no repetir la accion\"}");}
+completed:
     MemoryBarrier();InterlockedExchange((LONG*)&shared->completed,request);
 }
 static bool __fastcall hook(void* w){
     bool result=original(w);
-    if(shared&&!inside&&GetCurrentThreadId()==mainThread){inside=true;shared->heartbeat=GetTickCount();execute(w);inside=false;}
+    if(shared&&!inside&&GetCurrentThreadId()==mainThread){inside=true;shared->heartbeat=GetTickCount();if(worldOK(w)){ingame::world=w;terrain::activeWorld=w;ingame::worldSeen=GetTickCount();}execute(w);inside=false;}
     return result;
 }
 static void jump(unsigned char* p,const void* target){p[0]=0xFF;p[1]=0x25;memset(p+2,0,4);memcpy(p+6,&target,8);}
-static DWORD WINAPI initialize(void*){
+static DWORD WINAPI initialize(void* module){
     base=(uintptr_t)GetModuleHandleW(nullptr);
     wchar_t exe[MAX_PATH];GetModuleFileNameW(nullptr,exe,MAX_PATH);
-    if(!wcsstr(exe,L"dirttown.exe"))return 6;
+    auto filename=wcsrchr(exe,L'\\');if(_wcsicmp(filename?filename+1:exe,L"dirttown.exe"))return 6;
+    if(!standalone::exactBuild(exe))return 8;
+    ingame::loadConfig((HINSTANCE)module);
     const unsigned char expected[]={0x48,0x83,0xEC,0x38,0x48,0xBA,0,0,0,0,2,0,0,0};
     auto target=(unsigned char*)(base+0x939DB0);
     Tick previous=nullptr;
     if(memcmp(target,expected,sizeof(expected))){
         if(target[0]!=0xFF||target[1]!=0x25)return 1;
         memcpy(&previous,target+6,8);MEMORY_BASIC_INFORMATION m{};
-        if(!VirtualQuery((void*)previous,&m,sizeof(m))||(m.AllocationBase!=GetModuleHandleW(L"DirtTownBridge4.dll")&&m.AllocationBase!=GetModuleHandleW(L"DirtTownBridge5.dll")&&m.AllocationBase!=GetModuleHandleW(L"DirtTownBridge6.dll")))return 1;
+        if(!VirtualQuery((void*)previous,&m,sizeof(m))||(m.AllocationBase!=GetModuleHandleW(L"DirtTownBridge4.dll")&&m.AllocationBase!=GetModuleHandleW(L"DirtTownBridge5.dll")&&m.AllocationBase!=GetModuleHandleW(L"DirtTownBridge6.dll")&&m.AllocationBase!=GetModuleHandleW(L"DirtTownBridge8.dll")))return 1;
     }
-    wchar_t name[96];swprintf_s(name,L"Local\\DirtTownMenuBridge8-%lu",GetCurrentProcessId());
+    auto frameTarget=(unsigned char*)(base+0x1180950);
+    const unsigned char frameBytes[]={0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x55,0x57,0x56,0x53,0x48,0x83,0xEC,0x58};
+    if(memcmp(frameTarget,frameBytes,sizeof(frameBytes)))return 7;
+    auto frameTrampoline=(unsigned char*)VirtualAlloc(nullptr,64,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);if(!frameTrampoline)return 4;
+    memcpy(frameTrampoline,frameBytes,sizeof(frameBytes));jump(frameTrampoline+sizeof(frameBytes),frameTarget+sizeof(frameBytes));
+    DWORD frameProtect;VirtualProtect(frameTrampoline,64,PAGE_EXECUTE_READ,&frameProtect);FlushInstructionCache(GetCurrentProcess(),frameTrampoline,64);
+    ingame::originalEnd=(ingame::EndFrame)frameTrampoline;
+    auto cameraTarget=(unsigned char*)(base+0xC723E0);
+    const unsigned char cameraBytes[]={0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x55,0x57,0x56,0x53,0x48,0x81,0xEC,0x78,0x02,0,0};
+    if(memcmp(cameraTarget,cameraBytes,sizeof(cameraBytes)))return 9;
+    auto cameraTrampoline=(unsigned char*)VirtualAlloc(nullptr,64,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);if(!cameraTrampoline)return 4;
+    memcpy(cameraTrampoline,cameraBytes,sizeof(cameraBytes));jump(cameraTrampoline+sizeof(cameraBytes),cameraTarget+sizeof(cameraBytes));
+    DWORD cameraProtect;VirtualProtect(cameraTrampoline,64,PAGE_EXECUTE_READ,&cameraProtect);FlushInstructionCache(GetCurrentProcess(),cameraTrampoline,64);terrainOriginalUi=cameraTrampoline;
+    wchar_t name[96];swprintf_s(name,L"Local\\DirtTownMenuBridge10-%lu",GetCurrentProcessId());
     HANDLE mapping=CreateFileMappingW(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,0,sizeof(Shared),name);
     if(!mapping)return 2;
     shared=(Shared*)MapViewOfFile(mapping,FILE_MAP_ALL_ACCESS,0,0,sizeof(Shared));if(!shared)return 3;
@@ -209,11 +240,12 @@ static DWORD WINAPI initialize(void*){
     memcpy(trampoline,expected,sizeof(expected));jump(trampoline+sizeof(expected),target+sizeof(expected));
     DWORD protect;VirtualProtect(trampoline,64,PAGE_EXECUTE_READ,&protect);FlushInstructionCache(GetCurrentProcess(),trampoline,64);
     original=previous?previous:(Tick)trampoline;
-    std::vector<HANDLE> stopped;
+    HANDLE stopped[1024];size_t stoppedCount=0;
     HANDLE snap=CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD,0);THREADENTRY32 entry{sizeof(entry)};bool failed=false;ULARGE_INTEGER oldest;oldest.QuadPart=~0ull;
     if(Thread32First(snap,&entry))do{if(entry.th32OwnerProcessID==GetCurrentProcessId()&&entry.th32ThreadID!=GetCurrentThreadId()){
+        if(stoppedCount>=1024){failed=true;break;}
         HANDLE h=OpenThread(THREAD_SUSPEND_RESUME|THREAD_GET_CONTEXT|THREAD_SET_CONTEXT|THREAD_QUERY_INFORMATION,FALSE,entry.th32ThreadID);
-        if(!h||SuspendThread(h)==DWORD(-1)){if(h)CloseHandle(h);failed=true;break;}stopped.push_back(h);
+        if(!h||SuspendThread(h)==DWORD(-1)){if(h)CloseHandle(h);failed=true;break;}stopped[stoppedCount++]=h;
         FILETIME created,exited,kernel,user;
         if(GetThreadTimes(h,&created,&exited,&kernel,&user)){
             ULARGE_INTEGER time;time.LowPart=created.dwLowDateTime;time.HighPart=created.dwHighDateTime;
@@ -225,13 +257,22 @@ static DWORD WINAPI initialize(void*){
             context.Rip=uintptr_t(trampoline)+context.Rip-uintptr_t(target);
             if(!SetThreadContext(h,&context)){failed=true;break;}
         }
+        if(context.Rip>=uintptr_t(frameTarget)&&context.Rip<uintptr_t(frameTarget)+sizeof(frameBytes)){
+            context.Rip=uintptr_t(frameTrampoline)+context.Rip-uintptr_t(frameTarget);if(!SetThreadContext(h,&context)){failed=true;break;}
+        }
+        if(context.Rip>=uintptr_t(cameraTarget)&&context.Rip<uintptr_t(cameraTarget)+sizeof(cameraBytes)){
+            context.Rip=uintptr_t(cameraTrampoline)+context.Rip-uintptr_t(cameraTarget);if(!SetThreadContext(h,&context)){failed=true;break;}
+        }
     }}while(Thread32Next(snap,&entry));else failed=true;CloseHandle(snap);
     if(!failed&&VirtualProtect(target,sizeof(expected),PAGE_EXECUTE_READWRITE,&protect)){
-        jump(target,(void*)hook);memset(target+14,0x90,sizeof(expected)-14);
-        DWORD ignored;VirtualProtect(target,sizeof(expected),protect,&ignored);FlushInstructionCache(GetCurrentProcess(),target,sizeof(expected));shared->enabled=1;
+        if(!VirtualProtect(frameTarget,sizeof(frameBytes),PAGE_EXECUTE_READWRITE,&frameProtect))failed=true;
+        if(!failed&&!VirtualProtect(cameraTarget,sizeof(cameraBytes),PAGE_EXECUTE_READWRITE,&cameraProtect)){DWORD ignored;VirtualProtect(frameTarget,sizeof(frameBytes),frameProtect,&ignored);failed=true;}
+        if(!failed){jump(target,(void*)hook);jump(frameTarget,(void*)ingame::frame);memset(frameTarget+14,0x90,2);jump(cameraTarget,(void*)terrainUiHook);memset(cameraTarget+14,0x90,sizeof(cameraBytes)-14);DWORD ignored;VirtualProtect(cameraTarget,sizeof(cameraBytes),cameraProtect,&ignored);FlushInstructionCache(GetCurrentProcess(),cameraTarget,sizeof(cameraBytes));VirtualProtect(frameTarget,sizeof(frameBytes),frameProtect,&ignored);FlushInstructionCache(GetCurrentProcess(),frameTarget,sizeof(frameBytes));shared->enabled=1;}
+        DWORD ignored;VirtualProtect(target,sizeof(expected),protect,&ignored);FlushInstructionCache(GetCurrentProcess(),target,sizeof(expected));
     }
-    for(auto h:stopped){ResumeThread(h);CloseHandle(h);}return shared->enabled?0:5;
+    if(failed)shared->enabled=0;
+    for(size_t i=0;i<stoppedCount;i++){ResumeThread(stopped[i]);CloseHandle(stopped[i]);}return shared->enabled?0:5;
 }
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID){
-    if(reason==DLL_PROCESS_ATTACH){DisableThreadLibraryCalls(instance);HANDLE thread=CreateThread(nullptr,0,initialize,nullptr,0,nullptr);if(thread)CloseHandle(thread);}return TRUE;
+    if(reason==DLL_PROCESS_ATTACH){DisableThreadLibraryCalls(instance);HANDLE thread=CreateThread(nullptr,0,initialize,instance,0,nullptr);if(thread)CloseHandle(thread);}return TRUE;
 }
